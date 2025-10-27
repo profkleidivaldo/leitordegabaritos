@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <title>Leitor de Gabaritos</title>
+    
+
+  </head>
+    
+  <body>
+  <!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>📄 Leitor de Gabaritos Inteligente</title>
+<script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+<style>
+body {
+  font-family: Poppins, sans-serif;
+  background: #f2f5fa;
+  margin: 0;
+  padding: 0;
+  text-align: center;
+}
+h1 {
+  background: #0056d2;
+  color: white;
+  padding: 10px 0;
+  margin: 0;
+}
+#controls {
+  margin: 15px 0;
+}
+canvas {
+  border: 2px solid #0056d2;
+  margin: 10px;
+  max-width: 95%;
+}
+button, input[type=number], select, input[type=text] {
+  font-size: 16px;
+  margin: 6px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+}
+button {
+  background: #0056d2;
+  color: white;
+  cursor: pointer;
+}
+button:hover {
+  background: #003e99;
+}
+#resultDiv {
+  font-size: 20px;
+  margin-top: 15px;
+}
+#alunoTable {
+  margin: 20px auto;
+  border-collapse: collapse;
+  width: 90%;
+  max-width: 700px;
+}
+#alunoTable th, #alunoTable td {
+  border: 1px solid #ccc;
+  padding: 6px;
+}
+#alunoTable th {
+  background: #0056d2;
+  color: white;
+}
+</style>
+</head>
+<body>
+<h1>📄 Leitor de Gabaritos Inteligente</h1>
+<div id="controls">
+  <label>Questões: <input type="number" id="numQ" value="10" min="1"></label>
+  <label>Alternativas: <input type="number" id="numA" value="4" min="2" max="6"></label>
+  <button id="buildBtn">Construir Gabarito</button>
+  <button id="markAnswersBtn" disabled>Marcar Respostas Corretas</button>
+  <button id="downloadBlankBtn" disabled>Baixar Versão Aluno</button>
+  <button id="downloadKeyBtn" disabled>Baixar Versão Professor</button><br>
+  <input type="text" id="nomeAluno" placeholder="Nome do aluno">
+  <input type="file" id="uploadStudent" accept="image/*" style="display:none">
+  <button id="readBtn" disabled>Ler Gabarito do Estudante</button>
+  <button id="downloadDoc" disabled>Baixar Resultados (Word)</button>
+  <button id="downloadImage" disabled>Baixar Imagem Corrigida</button>
+</div>
+
+<canvas id="teacherCanvas" width="700" height="900"></canvas>
+<canvas id="studentCanvas" width="700" height="900"></canvas>
+<div id="resultDiv"></div>
+<div id="statusDiv"></div>
+
+<table id="alunoTable">
+  <thead>
+    <tr><th>Aluno</th><th>Acertos</th><th>Total</th><th>Nota (%)</th></tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<script>
+let numQ, numA, gridInfo, teacherKey = [];
+const tCanvas = document.getElementById('teacherCanvas');
+const ctx = tCanvas.getContext('2d');
+const sCanvas = document.getElementById('studentCanvas');
+const stx = sCanvas.getContext('2d');
+const resultDiv = document.getElementById('resultDiv');
+const statusDiv = document.getElementById('statusDiv');
+const alunoTableBody = document.querySelector("#alunoTable tbody");
+const alunosData = [];
+
+// === Construir Gabarito ===
+document.getElementById('buildBtn').onclick = () => {
+  numQ = parseInt(document.getElementById('numQ').value);
+  numA = parseInt(document.getElementById('numA').value);
+  gridInfo = buildGrid(numQ, numA);
+  teacherKey = Array(numQ).fill(-1);
+  drawGrid(gridInfo);
+  document.getElementById('markAnswersBtn').disabled = false;
+  document.getElementById('downloadBlankBtn').disabled = false;
+  document.getElementById('downloadKeyBtn').disabled = false;
+  document.getElementById('readBtn').disabled = false;
+};
+
+// === Gera o layout do gabarito ===
+function buildGrid(numQ, numA) {
+  const margin = 60, spacingY = 60, spacingX = 100;
+  const positions = [];
+  for (let i = 0; i < numQ; i++) {
+    const row = [];
+    for (let j = 0; j < numA; j++) {
+      row.push({
+        cx: margin + spacingX * (j + 1),
+        cy: margin + spacingY * (i + 1)
+      });
+    }
+    positions.push(row);
+  }
+  return { numQ, numA, positions, circleR: 15 };
+}
+
+// === Desenha o gabarito ===
+function drawGrid(info, showAnswers = false) {
+  ctx.clearRect(0, 0, tCanvas.width, tCanvas.height);
+  ctx.fillStyle = "white";
+  ctx.fillRect(0, 0, tCanvas.width, tCanvas.height);
+  ctx.font = "16px Poppins";
+  ctx.fillStyle = "black";
+  ctx.textAlign = "center";
+
+  info.positions.forEach((row, i) => {
+    ctx.fillText(`${i + 1}.`, 30, row[0].cy + 5);
+    row.forEach((p, j) => {
+      ctx.beginPath();
+      ctx.arc(p.cx, p.cy, info.circleR, 0, Math.PI * 2);
+      ctx.stroke();
+      if (showAnswers && teacherKey[i] === j) {
+        ctx.fillStyle = "black";
+        ctx.beginPath();
+        ctx.arc(p.cx, p.cy, info.circleR * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "black";
+      }
+      ctx.fillText(String.fromCharCode(65 + j), p.cx, p.cy - 20);
+    });
+  });
+
+  // Marcadores de canto
+  const mSize = 20;
+  ctx.fillStyle = "black";
+  ctx.fillRect(20, 20, mSize, mSize);
+  ctx.fillRect(tCanvas.width - 40, 20, mSize, mSize);
+  ctx.fillRect(20, tCanvas.height - 40, mSize, mSize);
+  ctx.fillRect(tCanvas.width - 40, tCanvas.height - 40, mSize, mSize);
+}
+
+// === Marcação das respostas corretas ===
+document.getElementById('markAnswersBtn').onclick = () => {
+  statusDiv.innerText = "Clique nas alternativas corretas...";
+  tCanvas.onclick = e => {
+    const rect = tCanvas.getBoundingClientRect();
+    const x = e.clientX - rect.left, y = e.clientY - rect.top;
+    gridInfo.positions.forEach((row, i) => {
+      row.forEach((p, j) => {
+        const dist = Math.hypot(p.cx - x, p.cy - y);
+        if (dist < gridInfo.circleR) {
+          teacherKey[i] = j;
+          drawGrid(gridInfo, true);
+        }
+      });
+    });
+  };
+};
+
+// === Downloads de gabaritos ===
+document.getElementById('downloadBlankBtn').onclick = () => {
+  drawGrid(gridInfo, false);
+  const link = document.createElement('a');
+  link.download = 'gabarito_aluno.png';
+  link.href = tCanvas.toDataURL();
+  link.click();
+};
+document.getElementById('downloadKeyBtn').onclick = () => {
+  drawGrid(gridInfo, true);
+  const link = document.createElement('a');
+  link.download = 'gabarito_professor.png';
+  link.href = tCanvas.toDataURL();
+  link.click();
+};
+
+// === Leitura do gabarito do estudante ===
+document.getElementById('readBtn').onclick = () => {
+  document.getElementById('uploadStudent').click();
+};
+document.getElementById('uploadStudent').onchange = e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = async () => {
+    sCanvas.width = img.width;
+    sCanvas.height = img.height;
+    stx.drawImage(img, 0, 0, img.width, img.height);
+    const mat = cv.imread(sCanvas);
+    detectMarksAndCompare(mat);
+  };
+  img.src = URL.createObjectURL(file);
+};
+
+// === Detecção e correção ===
+function detectMarksAndCompare(mat) {
+  statusDiv.innerText = 'Detectando respostas...';
+  let gray = new cv.Mat();
+  cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
+  let clahe = new cv.CLAHE(3.0, new cv.Size(8, 8));
+  clahe.apply(gray, gray);
+  cv.GaussianBlur(gray, gray, new cv.Size(3, 3), 0);
+  let thrOtsu = new cv.Mat();
+  let thrAdapt = new cv.Mat();
+  cv.threshold(gray, thrOtsu, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
+  cv.adaptiveThreshold(gray, thrAdapt, 255, cv.ADAPTIVE_THRESH_MEAN_C, cv.THRESH_BINARY_INV, 35, 5);
+  cv.bitwise_and(thrOtsu, thrAdapt, thrOtsu);
+  let kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
+  cv.morphologyEx(thrOtsu, thrOtsu, cv.MORPH_OPEN, kernel);
+  cv.morphologyEx(thrOtsu, thrOtsu, cv.MORPH_CLOSE, kernel);
+  let contours = new cv.MatVector();
+  let hierarchy = new cv.Mat();
+  cv.findContours(thrOtsu, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+  const marks = [];
+  for (let i = 0; i < contours.size(); i++) {
+    let cnt = contours.get(i);
+    let area = cv.contourArea(cnt);
+    if (area < 20) continue;
+    let M = cv.moments(cnt);
+    if (M.m00 === 0) continue;
+    let cx = M.m10 / M.m00;
+    let cy = M.m01 / M.m00;
+    let peri = cv.arcLength(cnt, true);
+    let circ = 4 * Math.PI * area / (peri * peri + 1e-6);
+    if (circ > 0.4) marks.push({ cx, cy, area });
+  }
+
+  let meanSize = marks.reduce((s, m) => s + m.area, 0) / Math.max(1, marks.length);
+  let radius = Math.sqrt(meanSize / Math.PI) * 1.2;
+
+  const { numQ, numA, positions } = gridInfo;
+  const chosen = Array(numQ).fill(-1);
+  for (let i = 0; i < numQ; i++) {
+    let best = -1, bestDist = Infinity;
+    for (let j = 0; j < numA; j++) {
+      const p = positions[i][j];
+      for (const m of marks) {
+        let d = Math.hypot(p.cx - m.cx, p.cy - m.cy);
+        if (d < radius * 1.3 && d < bestDist) {
+          best = j;
+          bestDist = d;
+        }
+      }
+    }
+    chosen[i] = best;
+  }
+
+  cv.imshow(sCanvas, mat);
+  for (let i = 0; i < numQ; i++) {
+    const marked = chosen[i];
+    const correct = teacherKey[i];
+    const p = positions[i][correct];
+    let color = 'yellow';
+    if (marked === correct) color = 'lime';
+    else if (marked >= 0 && marked !== correct) color = 'red';
+    stx.beginPath();
+    stx.arc(p.cx, p.cy, radius * 1.3, 0, Math.PI * 2);
+    stx.strokeStyle = color;
+    stx.lineWidth = 3;
+    stx.stroke();
+  }
+
+  const acertos = chosen.filter((c, i) => c === teacherKey[i]).length;
+  const nota = ((acertos / numQ) * 100).toFixed(1);
+  resultDiv.innerHTML = `<b>${acertos}</b> acertos de ${numQ} — Nota: ${nota}%`;
+
+  const nomeAluno = document.getElementById('nomeAluno').value || `Aluno ${alunosData.length + 1}`;
+  alunosData.push({ nome: nomeAluno, acertos, total: numQ, nota });
+  atualizarTabela();
+  statusDiv.innerText = 'Correção concluída.';
+  document.getElementById('downloadDoc').disabled = false;
+  document.getElementById('downloadImage').disabled = false;
+
+  gray.delete(); thrOtsu.delete(); thrAdapt.delete(); kernel.delete();
+  contours.delete(); hierarchy.delete();
+}
+
+// === Atualiza tabela ===
+function atualizarTabela() {
+  alunoTableBody.innerHTML = "";
+  alunosData.forEach(a => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${a.nome}</td><td>${a.acertos}</td><td>${a.total}</td><td>${a.nota}</td>`;
+    alunoTableBody.appendChild(tr);
+  });
+}
+
+// === Download da tabela como .doc ===
+document.getElementById('downloadDoc').onclick = () => {
+  const tableHTML = `
+  <html xmlns:o='urn:schemas-microsoft-com:office:office' 
+        xmlns:w='urn:schemas-microsoft-com:office:word' 
+        xmlns='http://www.w3.org/TR/REC-html40'>
+  <head><meta charset='utf-8'><title>Resultados</title></head>
+  <body>
+  <h2 style="font-family:Poppins;color:#0056d2;">Resultados do Leitor de Gabaritos</h2>
+  ${document.getElementById('alunoTable').outerHTML}
+  </body></html>`;
+  const blob = new Blob(['\ufeff', tableHTML], { type: 'application/msword' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'resultados_gabarito.doc';
+  link.click();
+};
+
+// === Download da imagem corrigida ===
+document.getElementById('downloadImage').onclick = () => {
+  const link = document.createElement('a');
+  link.download = 'gabarito_corrigido.png';
+  link.href = sCanvas.toDataURL("image/png");
+  link.click();
+};
+</script>
+</body>
+</html>
+    
+  </body>
+  
+</html>
